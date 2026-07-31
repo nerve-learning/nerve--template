@@ -1,0 +1,7 @@
+visitante = input("Identifíquese: ")
+planeta = input("Planeta de origen: ")
+print("--- Registro de Acceso ---")
+print("Se ha detectado a:")
+print(visitante)
+print("Proveniente de:")
+print(planeta)
