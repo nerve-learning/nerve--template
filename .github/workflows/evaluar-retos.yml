@@ -1,9 +1,10 @@
-name: Evaluar Retos Python
+name: Evaluar Retos
 
 on:
-  push:
+  pull_request:
+    branches: [main]
     paths:
-      # Retos de módulos (alumno crea estos)
+      # Retos de módulos Python (compatibilidad con el currículum actual)
       - 'python/**/reto.py'
       - 'python/**/test_reto*.py'
       - 'python/**/radar.py'
@@ -16,51 +17,85 @@ on:
       - 'python/**/sensor.py'
       - 'python/**/hub_estricto.py'
       - 'python/**/nerve.config'
-      # Retos socráticos (alumno crea reto.py dentro de retos/)
+      # Retos de Rust, Go, Java y JS. Cada lenguaje puede tener su propia
+      # estructura de proyecto (por ejemplo, src/, Cargo.toml o pom.xml).
+      - 'rust/**/*.rs'
+      - 'rust/**/Cargo.toml'
+      - 'rust/**/Cargo.lock'
+      - 'go/**/*.go'
+      - 'go/**/go.mod'
+      - 'go/**/go.sum'
+      - 'java/**/*.java'
+      - 'java/**/pom.xml'
+      - 'java/**/build.gradle'
+      - 'java/**/build.gradle.kts'
+      - 'java/**/settings.gradle'
+      - 'java/**/settings.gradle.kts'
+      - 'js/**/*.js'
+      - 'js/**/*.ts'
+      - 'js/**/package.json'
+      - 'js/**/package-lock.json'
+      # Retos socráticos por lenguaje
       - 'retos/python/**/reto.py'
+      - 'retos/rust/**/*.rs'
+      - 'retos/rust/**/Cargo.toml'
+      - 'retos/rust/**/Cargo.lock'
+      - 'retos/go/**/*.go'
+      - 'retos/go/**/go.mod'
+      - 'retos/go/**/go.sum'
+      - 'retos/java/**/*.java'
+      - 'retos/java/**/pom.xml'
+      - 'retos/java/**/build.gradle'
+      - 'retos/java/**/build.gradle.kts'
+      - 'retos/java/**/settings.gradle'
+      - 'retos/java/**/settings.gradle.kts'
+      - 'retos/js/**/*.js'
+      - 'retos/js/**/*.ts'
+      - 'retos/js/**/package.json'
+      - 'retos/js/**/package-lock.json'
 
 jobs:
   # ─────────────────────────────────────────────
-  # JOB 1: Evaluar retos modificados
-  # Cubre: python/Modulo-XX y retos/python/
+  # Evaluar retos modificados en el PR y comentar el resultado.
+  # Este job es el "required status check" de la rama main.
   # ─────────────────────────────────────────────
   evaluar:
     name: Evaluacion
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      retos_aprobados: ${{ steps.ejecutar.outputs.retos_aprobados }}
+      pull-requests: write
 
     steps:
       - name: Clonar repo del alumno
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Detectar archivos modificados
+      - name: Detectar archivos modificados en el PR
         id: detectar
         run: |
-          archivos=$(git diff --name-only HEAD^ HEAD 2>/dev/null || \
-                     git show --name-only HEAD --format="" 2>/dev/null || echo "")
+          archivos=$(git diff --name-only \
+            "origin/${{ github.event.pull_request.base.ref }}"...HEAD 2>/dev/null || echo "")
 
-          # Filtrar: carpetas de módulos Y carpetas de retos socráticos
-          carpetas_modulos=$(echo "$archivos" | grep '^python/' | xargs -r -I{} dirname {} | sort -u || true)
-          carpetas_retos=$(echo "$archivos" | grep '^retos/python/' | xargs -r -I{} dirname {} | sort -u || true)
+          relevantes=$(echo "$archivos" | grep -E '^(python|rust|go|java|js)/|^retos/(python|rust|go|java|js)/' || true)
 
-          todas=$(printf "%s\n%s" "$carpetas_modulos" "$carpetas_retos" | sort -u | tr '\n' ' ')
-
-          if [ -z "$(echo $todas | tr -d ' ')" ]; then
+          if [ -z "$(echo "$relevantes" | tr -d '[:space:]')" ]; then
             echo "Sin cambios relevantes."
-            echo "carpetas=" >> "$GITHUB_OUTPUT"
+            echo "archivos=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "carpetas=$todas" >> "$GITHUB_OUTPUT"
-          echo "Retos a evaluar: $todas"
+          {
+            echo "archivos<<EOF"
+            echo "$relevantes"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Archivos de retos a evaluar:"
+          echo "$relevantes"
 
       - name: Descargar tests oficiales de nerve-community
-        if: steps.detectar.outputs.carpetas != ''
+        if: steps.detectar.outputs.archivos != ''
         run: |
           git clone --depth 1 --no-checkout \
             https://github.com/nerve-learning/nerve-community.git \
@@ -68,268 +103,211 @@ jobs:
 
           cd /tmp/nerve-community
           git sparse-checkout init --cone
-
-          carpetas="${{ steps.detectar.outputs.carpetas }}"
-          git sparse-checkout set $carpetas
+          git sparse-checkout set python rust go java js retos
           git checkout
 
+          echo ""
+          echo "── Verificación: contenido de nerve-community ──"
+          if [ -d /tmp/nerve-community/python ]; then
+            echo "python/ existe. Módulos y niveles encontrados:"
+            find /tmp/nerve-community/python -maxdepth 2 -mindepth 1 -type d | sort
+          else
+            echo "⚠️ ADVERTENCIA: /tmp/nerve-community/python NO existe."
+            echo "Contenido real de /tmp/nerve-community:"
+            ls -la /tmp/nerve-community
+          fi
+
       - name: Configurar Python 3.12
-        if: steps.detectar.outputs.carpetas != ''
+        if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
       - name: Instalar dependencias base
-        if: steps.detectar.outputs.carpetas != ''
+        if: always() && steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         run: pip install -q pytest requests beautifulsoup4 aiohttp scikit-learn matplotlib
+
+      - name: Configurar Go
+        if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Configurar Java
+        if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Configurar Rust
+        if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configurar Node.js
+        if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
 
       - name: Ejecutar evaluaciones
         id: ejecutar
-        if: steps.detectar.outputs.carpetas != ''
+        if: always() && steps.detectar.outputs.archivos != ''
         run: |
-          carpetas="${{ steps.detectar.outputs.carpetas }}"
+          archivos="${{ steps.detectar.outputs.archivos }}"
           fallo=0
           pasan=0
           fallan=0
-          retos_aprobados=""
+          evaluadas=""
 
-          echo ""
-          echo "======================================================"
-          echo "       EVALUACION NERVE — RESULTADOS"
-          echo "======================================================"
+          echo "## 🧪 Resultado de evaluación Nerve" > resultado_pr.md
+          echo "" >> resultado_pr.md
 
-          for carpeta in $carpetas; do
-            [ -d "$carpeta" ] || continue
+          for archivo in $archivos; do
+            [ -f "$archivo" ] || continue
+
+            carpeta=$(dirname "$archivo")
+            carpeta_original="$carpeta"
+            while [ "$carpeta" != "." ] && [ "$carpeta" != "/" ]; do
+              oficial="/tmp/nerve-community/$carpeta"
+              if [ -f "$oficial/evaluador.sh" ] || [ -f "$oficial/test_main.py" ]; then
+                break
+              fi
+              carpeta=$(dirname "$carpeta")
+            done
+
+            if [ "$carpeta" = "." ] || [ "$carpeta" = "/" ]; then
+              echo "- ⚠️ No se encontró evaluador oficial para \`$archivo\`" >> resultado_pr.md
+              echo "  <details><summary>Detalle técnico</summary>" >> resultado_pr.md
+              echo "" >> resultado_pr.md
+              echo '  ```' >> resultado_pr.md
+              echo "  Se buscó (sin éxito) evaluador.sh o test_main.py en:" >> resultado_pr.md
+              echo "  /tmp/nerve-community/$carpeta_original" >> resultado_pr.md
+              echo "  y en cada carpeta padre hasta la raíz." >> resultado_pr.md
+              echo "  Verifica que esa ruta exista tal cual (mayúsculas/guiones)" >> resultado_pr.md
+              echo "  dentro del repo nerve-community." >> resultado_pr.md
+              echo '  ```' >> resultado_pr.md
+              echo "  </details>" >> resultado_pr.md
+              fallo=1
+              continue
+            fi
+
+            case " $evaluadas " in
+              *" $carpeta "*) continue ;;
+            esac
+            evaluadas="$evaluadas $carpeta"
+
+            [ -d "$carpeta" ] || { echo "- ⚠️ No existe el reto: \`$carpeta\`" >> resultado_pr.md; fallo=1; continue; }
 
             nivel=$(basename "$carpeta")
+            lenguaje=$(echo "$carpeta" | cut -d'/' -f1)
 
-            # Identificar si es módulo o reto socrático para el label
             if echo "$carpeta" | grep -q '^retos/'; then
               grupo=$(echo "$carpeta" | cut -d'/' -f1-3)
               label="[RETO SOCRÁTICO] $grupo / $nivel"
             else
               modulo=$(basename "$(dirname "$carpeta")")
-              label="[MODULO] $modulo / $nivel"
+              label="[$lenguaje] $modulo / $nivel"
             fi
 
             echo ""
             echo "--- $label ---"
 
+            evaluador="/tmp/nerve-community/$carpeta/evaluador.sh"
             test_oficial="/tmp/nerve-community/$carpeta/test_main.py"
-            if [ ! -f "$test_oficial" ]; then
-              echo "  Sin evaluador oficial para este nivel."
-              continue
-            fi
-
-            cp "$test_oficial" "$carpeta/test_main.py"
+            salida_test=$(mktemp)
 
             if [ -f "$carpeta/requirements.txt" ]; then
               pip install -q -r "$carpeta/requirements.txt"
             fi
 
-            if python -m pytest "$carpeta/test_main.py" -v --tb=short --no-header 2>&1; then
+            resultado=1
+            if [ -f "$evaluador" ]; then
+              if (cd "/tmp/nerve-community/$carpeta" && bash ./evaluador.sh "$GITHUB_WORKSPACE/$carpeta") > "$salida_test" 2>&1; then
+                resultado=0
+              else
+                resultado=$?
+              fi
+            elif [ "$lenguaje" = "python" ] && [ -f "$test_oficial" ]; then
+              cp "$test_oficial" "$carpeta/test_main.py"
+              if python -m pytest "$carpeta/test_main.py" -v --tb=short --no-header > "$salida_test" 2>&1; then
+                resultado=0
+              else
+                resultado=$?
+              fi
+              rm -f "$carpeta/test_main.py"
+            else
+              echo "  Falta evaluador oficial (evaluador.sh) para este reto." > "$salida_test"
+            fi
+
+            cat "$salida_test"
+
+            resumen_corto=""
+            if [ "$lenguaje" = "python" ] && [ -f "$test_oficial" ]; then
+              # pytest ya deja al final una línea "FAILED archivo::test - Mensaje"
+              # con el mensaje del assert que escribiste en test_main.py.
+              # Nos quedamos solo con eso: nombre del test + por qué falló,
+              # sin rutas absolutas, sin CompletedProcess, sin traceback doble.
+              resumen_corto=$(grep -E '^(FAILED|ERROR) ' "$salida_test" \
+                | sed -E 's#^(FAILED|ERROR) [^:]*::#❌ #' || true)
+            fi
+
+            if [ $resultado -eq 0 ]; then
               echo "  APROBADO"
               pasan=$((pasan + 1))
-              retos_aprobados="$retos_aprobados $carpeta"
+              echo "- ✅ **APROBADO** — $label" >> resultado_pr.md
             else
               echo "  REPROBADO"
               fallan=$((fallan + 1))
               fallo=1
+              {
+                echo "- ❌ **REPROBADO** — $label"
+                if [ -n "$resumen_corto" ]; then
+                  echo ""
+                  echo "$resumen_corto" | sed 's/^/  /'
+                  echo ""
+                  echo "  <details><summary>Ver log completo (para revisión avanzada)</summary>"
+                else
+                  echo "  <details><summary>Ver detalle</summary>"
+                fi
+                echo ""
+                echo '  ```'
+                tail -n 25 "$salida_test" | sed 's/^/  /'
+                echo '  ```'
+                echo "  </details>"
+              } >> resultado_pr.md
             fi
-
-            rm "$carpeta/test_main.py"
+            rm -f "$salida_test"
           done
 
-          echo ""
-          echo "======================================================"
-          echo "  RESUMEN: $pasan aprobados / $fallan reprobados"
-          echo "======================================================"
+          {
+            echo ""
+            echo "---"
+            echo "**Resumen: $pasan aprobado(s) / $fallan reprobado(s)**"
+          } >> resultado_pr.md
 
-          echo "retos_aprobados=$retos_aprobados" >> "$GITHUB_OUTPUT"
+          cat resultado_pr.md >> "$GITHUB_STEP_SUMMARY"
 
           [ $fallo -eq 0 ] || exit 1
 
-  # ─────────────────────────────────────────────
-  # JOB 2: Desbloquear siguiente módulo + glosario
-  # Solo aplica para retos de python/Modulo-XX
-  # ─────────────────────────────────────────────
-  desbloquear:
-    name: Desbloquear modulo
-    needs: evaluar
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Clonar repo del alumno
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 1
-
-      - name: Configurar git
+      - name: Garantizar resultado_pr.md
+        if: always() && steps.detectar.outputs.archivos != ''
         run: |
-          git config user.name "Nerve Bot"
-          git config user.email "bot@nerve-learning.com"
-
-      - name: Calcular desbloqueos
-        id: check
-        run: |
-          retos="${{ needs.evaluar.outputs.retos_aprobados }}"
-
-          # Mapa: RETO final de módulo → módulo(s) a desbloquear
-          declare -A DESBLOQUEOS=(
-            ["10-RETO-ficha"]="Modulo-02-Flujo"
-            ["20-RETO-portero"]="Modulo-03-Estructuras"
-            ["30-RETO-inventario"]="Modulo-04-Bucles,Modulo-04.5-Iteracion-Avanzada"
-            ["40-RETO-analizador"]="Modulo-05-Funciones"
-            ["4-RETO-pipeline"]="Modulo-05-Funciones"
-            ["50-RETO-calculadora"]="Modulo-05.5-Calidad-de-Codigo,Modulo-06-OS"
-            ["6-RETO-suite-tests"]="Modulo-06-OS"
-            ["60-RETO-organizador"]="Modulo-07-Web-APIs,Modulo-07.5-Programacion-Asincrona"
-            ["70-RETO-monitor"]="Modulo-08-POO"
-            ["6-RETO-scraper-concurrente"]="Modulo-08-POO"
-            ["80-RETO-ecosistema"]="Modulo-09-Data-IA"
-            ["90-RETO-predictor"]="Modulo-10-Nerve"
-            ["100-topologia-red"]="Modulo-11-Herramientas-Nerve"
-            ["110-asociacion-archivos"]="Modulo-12-Arquitectura-Avanzada"
-            ["120-RETO-FINAL-DISTRIBUIDO"]="COMPLETADO"
-          )
-
-          # Mapa: RETO final → archivo de glosario/python/ a desbloquear
-          declare -A GLOSARIO_MAP=(
-            ["10-RETO-ficha"]="02-control-de-flujo.md"
-            ["20-RETO-portero"]="03-funciones.md"
-            ["30-RETO-inventario"]="04-estructuras-de-datos.md"
-            ["40-RETO-analizador"]="05-modulos-y-librerias.md"
-            ["4-RETO-pipeline"]="05-modulos-y-librerias.md"
-            ["50-RETO-calculadora"]="06-manejo-de-errores.md"
-            ["6-RETO-suite-tests"]="06-manejo-de-errores.md"
-            ["60-RETO-organizador"]="07-archivos-y-entrada-salida.md"
-            ["70-RETO-monitor"]="08-poo-basica.md"
-            ["6-RETO-scraper-concurrente"]="08-poo-basica.md"
-            ["80-RETO-ecosistema"]="09-data-ia.md"
-            ["90-RETO-predictor"]="10-nerve-ipc.md"
-            ["100-topologia-red"]="11-herramientas-avanzadas.md"
-            ["110-asociacion-archivos"]="12-arquitectura-avanzada.md"
-          )
-
-          # Mapa: RETO final → glosario transversal (raiz de glosario/)
-          # git-github.md, terminal-*.md van en el template desde el inicio
-          declare -A GLOSARIO_RAIZ_MAP=(
-            ["30-RETO-inventario"]="conceptos-software.md"
-            ["90-RETO-predictor"]="redes-sockets.md"
-          )
-
-          modulos_a_desbloquear=""
-          glosarios_a_desbloquear=""
-          glosarios_raiz_a_desbloquear=""
-
-          for carpeta in $retos; do
-            # Solo los retos de módulos disparan desbloqueo
-            echo "$carpeta" | grep -q '^python/' || continue
-
-            nivel=$(basename "$carpeta")
-
-            if [ -n "${DESBLOQUEOS[$nivel]+_}" ]; then
-              modulos_a_desbloquear="$modulos_a_desbloquear ${DESBLOQUEOS[$nivel]}"
-            fi
-
-            if [ -n "${GLOSARIO_MAP[$nivel]+_}" ]; then
-              glosarios_a_desbloquear="$glosarios_a_desbloquear ${GLOSARIO_MAP[$nivel]}"
-            fi
-
-            if [ -n "${GLOSARIO_RAIZ_MAP[$nivel]+_}" ]; then
-              glosarios_raiz_a_desbloquear="$glosarios_raiz_a_desbloquear ${GLOSARIO_RAIZ_MAP[$nivel]}"
-            fi
-          done
-
-          echo "modulos=$modulos_a_desbloquear" >> "$GITHUB_OUTPUT"
-          echo "glosarios=$glosarios_a_desbloquear" >> "$GITHUB_OUTPUT"
-          echo "glosarios_raiz=$glosarios_raiz_a_desbloquear" >> "$GITHUB_OUTPUT"
-
-      - name: Clonar nerve-community
-        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != '' || steps.check.outputs.glosarios_raiz != ''
-        run: |
-          git clone --depth 1 \
-            https://github.com/nerve-learning/nerve-community.git \
-            /tmp/nerve-community
-
-      - name: Desbloquear modulos y glosarios
-        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != '' || steps.check.outputs.glosarios_raiz != ''
-        run: |
-          modulos="${{ steps.check.outputs.modulos }}"
-          glosarios="${{ steps.check.outputs.glosarios }}"
-          glosarios_raiz="${{ steps.check.outputs.glosarios_raiz }}"
-          cambios=0
-
-          # ── Módulos ──────────────────────────────────────
-          for modulo in $modulos; do
-            if [ "$modulo" = "COMPLETADO" ]; then
-              echo "¡Felicidades! Has completado todos los modulos de Python."
-              continue
-            fi
-
-            ruta_src="/tmp/nerve-community/python/$modulo"
-            ruta_dst="python/$modulo"
-
-            [ -d "$ruta_src" ] || { echo "No encontrado: $modulo"; continue; }
-            [ -d "$ruta_dst" ] && { echo "$modulo ya desbloqueado."; continue; }
-
-            echo "Desbloqueando $modulo..."
-            mkdir -p "$ruta_dst"
-
-            find "$ruta_src" -type f \
-              ! -name "test_main.py" \
-              ! -name "reto.py" | \
-            while read src; do
-              relative="${src#$ruta_src/}"
-              dest="$ruta_dst/$relative"
-              mkdir -p "$(dirname "$dest")"
-              cp "$src" "$dest"
-            done
-
-            git add "python/$modulo"
-            cambios=$((cambios + 1))
-            echo "  $modulo desbloqueado."
-          done
-
-          # ── Glosarios ─────────────────────────────────────
-          for glosario in $glosarios; do
-            src="/tmp/nerve-community/glosario/python/$glosario"
-            dst="glosario/python/$glosario"
-
-            [ -f "$src" ] || { echo "Glosario no encontrado: $glosario"; continue; }
-            [ -f "$dst" ] && { echo "Glosario $glosario ya existe."; continue; }
-
-            mkdir -p glosario/python
-            cp "$src" "$dst"
-            git add "$dst"
-            cambios=$((cambios + 1))
-            echo "  Glosario desbloqueado: $glosario"
-          done
-
-          # ── Glosarios raíz (transversales) ────────────────
-          for glosario in $glosarios_raiz; do
-            src="/tmp/nerve-community/glosario/$glosario"
-            dst="glosario/$glosario"
-
-            [ -f "$src" ] || { echo "Glosario raiz no encontrado: $glosario"; continue; }
-            [ -f "$dst" ] && { echo "Glosario raiz $glosario ya existe."; continue; }
-
-            mkdir -p glosario
-            cp "$src" "$dst"
-            git add "$dst"
-            cambios=$((cambios + 1))
-            echo "  Glosario transversal desbloqueado: $glosario"
-          done
-
-          # ── Commit y push si hay cambios ───────────────────
-          if [ $cambios -gt 0 ]; then
-            git commit -m "unlock: nuevos modulos y glosarios desbloqueados"
-            git push
-            echo "Contenido nuevo enviado al repositorio."
-          else
-            echo "Sin nuevos contenidos que desbloquear."
+          if [ ! -s resultado_pr.md ]; then
+            echo "## 🧪 Resultado de evaluación Nerve" > resultado_pr.md
+            echo "" >> resultado_pr.md
+            echo "⚠️ Hubo un error interno al ejecutar la evaluación (falló antes de poder correr los tests). Reintenta el push, o avisa al staff si sigue fallando." >> resultado_pr.md
           fi
+
+      - name: Comentar resultado en el PR
+        if: always() && steps.detectar.outputs.archivos != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: nerve-evaluacion
+          path: resultado_pr.md

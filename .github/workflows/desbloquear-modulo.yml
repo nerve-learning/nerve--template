@@ -1,0 +1,213 @@
+name: Desbloquear Modulo
+
+# Corre SOLO cuando un PR hacia main se cierra. El job filtra por
+# merged == true, así que un PR cerrado sin mergear no desbloquea nada.
+# Confía en que "Evaluar Retos" (required status check del PR) ya
+# validó los retos antes de permitir el merge.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - 'python/**/reto.py'
+      - 'python/**/radar.py'
+      - 'python/**/filtro.py'
+      - 'python/**/alarma.py'
+      - 'python/**/mesero.py'
+      - 'python/**/cocina.py'
+      - 'python/**/hub_fortaleza.py'
+      - 'python/**/cliente_legal.py'
+      - 'python/**/sensor.py'
+      - 'python/**/hub_estricto.py'
+      - 'python/**/nerve.config'
+
+jobs:
+  desbloquear:
+    name: Desbloquear modulo
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Clonar repo del alumno (main, post-merge)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configurar git
+        run: |
+          git config user.name "Nerve Bot"
+          git config user.email "bot@nerve-learning.com"
+
+      - name: Detectar retos que llegaron a main en este merge
+        id: detectar
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          merge="${{ github.event.pull_request.merge_commit_sha }}"
+
+          archivos=$(git diff --name-only "$base" "$merge" -- python/ 2>/dev/null || echo "")
+
+          retos=""
+          for archivo in $archivos; do
+            [ -f "$archivo" ] || continue
+            carpeta=$(dirname "$archivo")
+            case " $retos " in
+              *" $carpeta "*) continue ;;
+            esac
+            retos="$retos $carpeta"
+          done
+
+          echo "retos=$retos" >> "$GITHUB_OUTPUT"
+          echo "Retos de python/ que llegaron a main: $retos"
+
+      - name: Calcular desbloqueos
+        id: check
+        if: steps.detectar.outputs.retos != ''
+        run: |
+          retos="${{ steps.detectar.outputs.retos }}"
+
+          declare -A DESBLOQUEOS=(
+            ["10-RETO-ficha"]="Modulo-02-Flujo"
+            ["20-RETO-portero"]="Modulo-03-Estructuras"
+            ["30-RETO-inventario"]="Modulo-04-Bucles,Modulo-04.5-Iteracion-Avanzada"
+            ["40-RETO-analizador"]="Modulo-05-Funciones"
+            ["4-RETO-pipeline"]="Modulo-05-Funciones"
+            ["50-RETO-calculadora"]="Modulo-05.5-Calidad-de-Codigo,Modulo-06-OS"
+            ["6-RETO-suite-tests"]="Modulo-06-OS"
+            ["60-RETO-organizador"]="Modulo-07-Web-APIs,Modulo-07.5-Programacion-Asincrona"
+            ["70-RETO-monitor"]="Modulo-08-POO"
+            ["6-RETO-scraper-concurrente"]="Modulo-08-POO"
+            ["80-RETO-ecosistema"]="Modulo-09-Data-IA"
+            ["90-RETO-predictor"]="Modulo-10-Nerve"
+            ["100-topologia-red"]="Modulo-11-Herramientas-Nerve"
+            ["110-asociacion-archivos"]="Modulo-12-Arquitectura-Avanzada"
+            ["120-RETO-FINAL-DISTRIBUIDO"]="COMPLETADO"
+          )
+
+          declare -A GLOSARIO_MAP=(
+            ["10-RETO-ficha"]="02-control-de-flujo.md"
+            ["20-RETO-portero"]="03-funciones.md"
+            ["30-RETO-inventario"]="04-estructuras-de-datos.md"
+            ["40-RETO-analizador"]="05-modulos-y-librerias.md"
+            ["4-RETO-pipeline"]="05-modulos-y-librerias.md"
+            ["50-RETO-calculadora"]="06-manejo-de-errores.md"
+            ["6-RETO-suite-tests"]="06-manejo-de-errores.md"
+            ["60-RETO-organizador"]="07-archivos-y-entrada-salida.md"
+            ["70-RETO-monitor"]="08-poo-basica.md"
+            ["6-RETO-scraper-concurrente"]="08-poo-basica.md"
+            ["80-RETO-ecosistema"]="09-data-ia.md"
+            ["90-RETO-predictor"]="10-nerve-ipc.md"
+            ["100-topologia-red"]="11-herramientas-avanzadas.md"
+            ["110-asociacion-archivos"]="12-arquitectura-avanzada.md"
+          )
+
+          declare -A GLOSARIO_RAIZ_MAP=(
+            ["30-RETO-inventario"]="conceptos-software.md"
+            ["90-RETO-predictor"]="redes-sockets.md"
+          )
+
+          modulos_a_desbloquear=""
+          glosarios_a_desbloquear=""
+          glosarios_raiz_a_desbloquear=""
+
+          for carpeta in $retos; do
+            nivel=$(basename "$carpeta")
+
+            if [ -n "${DESBLOQUEOS[$nivel]+_}" ]; then
+              modulos_a_desbloquear="$modulos_a_desbloquear ${DESBLOQUEOS[$nivel]}"
+            fi
+            if [ -n "${GLOSARIO_MAP[$nivel]+_}" ]; then
+              glosarios_a_desbloquear="$glosarios_a_desbloquear ${GLOSARIO_MAP[$nivel]}"
+            fi
+            if [ -n "${GLOSARIO_RAIZ_MAP[$nivel]+_}" ]; then
+              glosarios_raiz_a_desbloquear="$glosarios_raiz_a_desbloquear ${GLOSARIO_RAIZ_MAP[$nivel]}"
+            fi
+          done
+
+          echo "modulos=$modulos_a_desbloquear" >> "$GITHUB_OUTPUT"
+          echo "glosarios=$glosarios_a_desbloquear" >> "$GITHUB_OUTPUT"
+          echo "glosarios_raiz=$glosarios_raiz_a_desbloquear" >> "$GITHUB_OUTPUT"
+
+      - name: Clonar nerve-community
+        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != '' || steps.check.outputs.glosarios_raiz != ''
+        run: |
+          git clone --depth 1 \
+            https://github.com/nerve-learning/nerve-community.git \
+            /tmp/nerve-community
+
+      - name: Desbloquear modulos y glosarios
+        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != '' || steps.check.outputs.glosarios_raiz != ''
+        run: |
+          modulos="${{ steps.check.outputs.modulos }}"
+          glosarios="${{ steps.check.outputs.glosarios }}"
+          glosarios_raiz="${{ steps.check.outputs.glosarios_raiz }}"
+          cambios=0
+
+          for modulo in $modulos; do
+            if [ "$modulo" = "COMPLETADO" ]; then
+              echo "¡Felicidades! Has completado todos los modulos de Python."
+              continue
+            fi
+
+            ruta_src="/tmp/nerve-community/python/$modulo"
+            ruta_dst="python/$modulo"
+
+            [ -d "$ruta_src" ] || { echo "No encontrado: $modulo"; continue; }
+            [ -d "$ruta_dst" ] && { echo "$modulo ya desbloqueado."; continue; }
+
+            echo "Desbloqueando $modulo..."
+            mkdir -p "$ruta_dst"
+
+            find "$ruta_src" -type f \
+              ! -name "test_main.py" \
+              ! -name "reto.py" | \
+            while read src; do
+              relative="${src#$ruta_src/}"
+              dest="$ruta_dst/$relative"
+              mkdir -p "$(dirname "$dest")"
+              cp "$src" "$dest"
+            done
+
+            git add "python/$modulo"
+            cambios=$((cambios + 1))
+            echo "  $modulo desbloqueado."
+          done
+
+          for glosario in $glosarios; do
+            src="/tmp/nerve-community/glosario/python/$glosario"
+            dst="glosario/python/$glosario"
+
+            [ -f "$src" ] || { echo "Glosario no encontrado: $glosario"; continue; }
+            [ -f "$dst" ] && { echo "Glosario $glosario ya existe."; continue; }
+
+            mkdir -p glosario/python
+            cp "$src" "$dst"
+            git add "$dst"
+            cambios=$((cambios + 1))
+            echo "  Glosario desbloqueado: $glosario"
+          done
+
+          for glosario in $glosarios_raiz; do
+            src="/tmp/nerve-community/glosario/$glosario"
+            dst="glosario/$glosario"
+
+            [ -f "$src" ] || { echo "Glosario raiz no encontrado: $glosario"; continue; }
+            [ -f "$dst" ] && { echo "Glosario raiz $glosario ya existe."; continue; }
+
+            mkdir -p glosario
+            cp "$src" "$dst"
+            git add "$dst"
+            cambios=$((cambios + 1))
+            echo "  Glosario transversal desbloqueado: $glosario"
+          done
+
+          if [ $cambios -gt 0 ]; then
+            git commit -m "unlock: nuevos modulos y glosarios desbloqueados"
+            git push
+            echo "Contenido nuevo enviado al repositorio."
+          else
+            echo "Sin nuevos contenidos que desbloquear."
+          fi
