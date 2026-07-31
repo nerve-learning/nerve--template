@@ -248,6 +248,16 @@ jobs:
 
             cat "$salida_test"
 
+            resumen_corto=""
+            if [ "$lenguaje" = "python" ] && [ -f "$test_oficial" ]; then
+              # pytest ya deja al final una línea "FAILED archivo::test - Mensaje"
+              # con el mensaje del assert que escribiste en test_main.py.
+              # Nos quedamos solo con eso: nombre del test + por qué falló,
+              # sin rutas absolutas, sin CompletedProcess, sin traceback doble.
+              resumen_corto=$(grep -E '^(FAILED|ERROR) ' "$salida_test" \
+                | sed -E 's#^(FAILED|ERROR) [^:]*::#❌ #' || true)
+            fi
+
             if [ $resultado -eq 0 ]; then
               echo "  APROBADO"
               pasan=$((pasan + 1))
@@ -258,7 +268,14 @@ jobs:
               fallo=1
               {
                 echo "- ❌ **REPROBADO** — $label"
-                echo "  <details><summary>Ver detalle</summary>"
+                if [ -n "$resumen_corto" ]; then
+                  echo ""
+                  echo "$resumen_corto" | sed 's/^/  /'
+                  echo ""
+                  echo "  <details><summary>Ver log completo (para revisión avanzada)</summary>"
+                else
+                  echo "  <details><summary>Ver detalle</summary>"
+                fi
                 echo ""
                 echo '  ```'
                 tail -n 25 "$salida_test" | sed 's/^/  /'
