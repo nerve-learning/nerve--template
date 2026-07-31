@@ -197,7 +197,7 @@ jobs:
             ["120-RETO-FINAL-DISTRIBUIDO"]="COMPLETADO"
           )
 
-          # Mapa: RETO final → archivo de glosario a desbloquear
+          # Mapa: RETO final → archivo de glosario/python/ a desbloquear
           declare -A GLOSARIO_MAP=(
             ["10-RETO-ficha"]="02-control-de-flujo.md"
             ["20-RETO-portero"]="03-funciones.md"
@@ -215,8 +215,16 @@ jobs:
             ["110-asociacion-archivos"]="12-arquitectura-avanzada.md"
           )
 
+          # Mapa: RETO final → glosario transversal (raiz de glosario/)
+          # git-github.md, terminal-*.md van en el template desde el inicio
+          declare -A GLOSARIO_RAIZ_MAP=(
+            ["30-RETO-inventario"]="conceptos-software.md"
+            ["90-RETO-predictor"]="redes-sockets.md"
+          )
+
           modulos_a_desbloquear=""
           glosarios_a_desbloquear=""
+          glosarios_raiz_a_desbloquear=""
 
           for carpeta in $retos; do
             # Solo los retos de módulos disparan desbloqueo
@@ -231,23 +239,29 @@ jobs:
             if [ -n "${GLOSARIO_MAP[$nivel]+_}" ]; then
               glosarios_a_desbloquear="$glosarios_a_desbloquear ${GLOSARIO_MAP[$nivel]}"
             fi
+
+            if [ -n "${GLOSARIO_RAIZ_MAP[$nivel]+_}" ]; then
+              glosarios_raiz_a_desbloquear="$glosarios_raiz_a_desbloquear ${GLOSARIO_RAIZ_MAP[$nivel]}"
+            fi
           done
 
           echo "modulos=$modulos_a_desbloquear" >> "$GITHUB_OUTPUT"
           echo "glosarios=$glosarios_a_desbloquear" >> "$GITHUB_OUTPUT"
+          echo "glosarios_raiz=$glosarios_raiz_a_desbloquear" >> "$GITHUB_OUTPUT"
 
       - name: Clonar nerve-community
-        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != ''
+        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != '' || steps.check.outputs.glosarios_raiz != ''
         run: |
           git clone --depth 1 \
             https://github.com/nerve-learning/nerve-community.git \
             /tmp/nerve-community
 
       - name: Desbloquear modulos y glosarios
-        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != ''
+        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != '' || steps.check.outputs.glosarios_raiz != ''
         run: |
           modulos="${{ steps.check.outputs.modulos }}"
           glosarios="${{ steps.check.outputs.glosarios }}"
+          glosarios_raiz="${{ steps.check.outputs.glosarios_raiz }}"
           cambios=0
 
           # ── Módulos ──────────────────────────────────────
@@ -294,6 +308,21 @@ jobs:
             git add "$dst"
             cambios=$((cambios + 1))
             echo "  Glosario desbloqueado: $glosario"
+          done
+
+          # ── Glosarios raíz (transversales) ────────────────
+          for glosario in $glosarios_raiz; do
+            src="/tmp/nerve-community/glosario/$glosario"
+            dst="glosario/$glosario"
+
+            [ -f "$src" ] || { echo "Glosario raiz no encontrado: $glosario"; continue; }
+            [ -f "$dst" ] && { echo "Glosario raiz $glosario ya existe."; continue; }
+
+            mkdir -p glosario
+            cp "$src" "$dst"
+            git add "$dst"
+            cambios=$((cambios + 1))
+            echo "  Glosario transversal desbloqueado: $glosario"
           done
 
           # ── Commit y push si hay cambios ───────────────────
