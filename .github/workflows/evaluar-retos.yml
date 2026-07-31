@@ -21,62 +21,72 @@ jobs:
       contents: read
 
     steps:
+      # 1. Repo del alumno
       - name: Clonar repo del alumno
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Descargar tests oficiales (anti-trampa)
-        uses: actions/checkout@v4
-        with:
-          repository: nerve-learning/nerve-community
-          path: _tests_oficiales
-          token: ${{ secrets.NERVE_TESTS_TOKEN }}
-          sparse-checkout: |
-            python
-          sparse-checkout-cone-mode: false
-
-      - name: Sobrescribir test_main.py con versiones oficiales
-        run: |
-          find _tests_oficiales/python -name "test_main.py" | while read src; do
-            ruta_relativa="${src#_tests_oficiales/}"
-            destino="$ruta_relativa"
-            mkdir -p "$(dirname "$destino")"
-            cp "$src" "$destino"
-          done
-          echo "Tests oficiales aplicados."
-          rm -rf _tests_oficiales
-
+      # 2. Detectar qué carpetas cambió el alumno
       - name: Detectar retos modificados
         id: detectar
         run: |
-          archivos=$(git diff --name-only HEAD^ HEAD -- 'python/**' 2>/dev/null || echo "")
+          archivos=$(git diff --name-only HEAD^ HEAD -- 'python/**' 2>/dev/null || \
+                     git show --name-only HEAD --format="" 2>/dev/null | grep '^python/' || echo "")
+
           if [ -z "$archivos" ]; then
-            echo "Sin cambios detectados."
+            echo "Sin cambios en python/."
             echo "carpetas=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           carpetas=$(echo "$archivos" | xargs -I{} dirname {} | sort -u | tr '\n' ' ')
           echo "carpetas=$carpetas" >> "$GITHUB_OUTPUT"
           echo "Retos a evaluar: $carpetas"
 
+      # 3. Descargar SOLO los test_main.py oficiales para las carpetas modificadas
+      #    Se descargan en /tmp/tests_oficiales y se copian momentáneamente.
+      #    Nunca se commitean al repo del alumno.
+      - name: Descargar tests oficiales
+        if: steps.detectar.outputs.carpetas != ''
+        run: |
+          carpetas="${{ steps.detectar.outputs.carpetas }}"
+
+          # Clonar nerve-community (público) con sparse-checkout eficiente
+          git clone --depth 1 --no-checkout \
+            https://github.com/nerve-learning/nerve-community.git \
+            /tmp/nerve-community
+
+          cd /tmp/nerve-community
+          git sparse-checkout init --cone
+
+          # Configurar solo las carpetas que necesitamos
+          rutas_sparsecheck=""
+          for carpeta in $carpetas; do
+            rutas_sparsecheck="$rutas_sparsecheck $carpeta"
+          done
+          git sparse-checkout set $rutas_sparsecheck
+          git checkout
+
+          echo "Tests oficiales descargados."
+
+      # 4. Python + dependencias
       - name: Configurar Python 3.12
+        if: steps.detectar.outputs.carpetas != ''
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
 
       - name: Instalar dependencias base
+        if: steps.detectar.outputs.carpetas != ''
         run: pip install -q pytest requests beautifulsoup4 aiohttp
 
+      # 5. Ejecutar tests por cada carpeta modificada
       - name: Ejecutar evaluaciones
+        if: steps.detectar.outputs.carpetas != ''
         run: |
           carpetas="${{ steps.detectar.outputs.carpetas }}"
-          if [ -z "$carpetas" ]; then
-            echo "Nada que evaluar."
-            exit 0
-          fi
-
           fallo=0
           pasan=0
           fallan=0
@@ -88,22 +98,29 @@ jobs:
 
           for carpeta in $carpetas; do
             [ -d "$carpeta" ] || continue
+
             nivel=$(basename "$carpeta")
             modulo=$(basename "$(dirname "$carpeta")")
+
             echo ""
             echo "--- $modulo / $nivel ---"
 
+            # Copiar test oficial a la carpeta del alumno (temporal)
+            test_oficial="/tmp/nerve-community/$carpeta/test_main.py"
+            if [ ! -f "$test_oficial" ]; then
+              echo "  Sin evaluador oficial para este nivel aun."
+              continue
+            fi
+
+            cp "$test_oficial" "$carpeta/test_main.py"
+
+            # Instalar requirements específicos del nivel
             if [ -f "$carpeta/requirements.txt" ]; then
               pip install -q -r "$carpeta/requirements.txt"
             fi
 
-            test_file="$carpeta/test_main.py"
-            if [ ! -f "$test_file" ]; then
-              echo "  Sin evaluador para este nivel"
-              continue
-            fi
-
-            if python -m pytest "$test_file" -v --tb=short --no-header 2>&1; then
+            # Ejecutar
+            if python -m pytest "$carpeta/test_main.py" -v --tb=short --no-header 2>&1; then
               echo "  APROBADO"
               pasan=$((pasan + 1))
             else
@@ -111,6 +128,9 @@ jobs:
               fallan=$((fallan + 1))
               fallo=1
             fi
+
+            # Borrar el test — nunca vive en el repo del alumno
+            rm "$carpeta/test_main.py"
           done
 
           echo ""
