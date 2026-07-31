@@ -117,7 +117,7 @@ jobs:
             nivel=$(basename "$carpeta")
 
             if [ -n "${DESBLOQUEOS[$nivel]+_}" ]; then
-              modulos_a_desbloquear="$modulos_a_desbloquear ${DESBLOQUEOS[$nivel]}"
+              modulos_a_desbloquear="$modulos_a_desbloquear ${DESBLOQUEOS[$nivel]//,/ }"
             fi
             if [ -n "${GLOSARIO_MAP[$nivel]+_}" ]; then
               glosarios_a_desbloquear="$glosarios_a_desbloquear ${GLOSARIO_MAP[$nivel]}"
