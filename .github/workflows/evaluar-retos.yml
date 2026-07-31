@@ -5,12 +5,15 @@ on:
     paths:
       - 'python/**/reto.py'
       - 'python/**/test_reto*.py'
-      - 'python/**/ejemplo.py'
       - 'python/**/radar.py'
       - 'python/**/filtro.py'
       - 'python/**/alarma.py'
       - 'python/**/mesero.py'
       - 'python/**/cocina.py'
+      - 'python/**/hub_fortaleza.py'
+      - 'python/**/cliente_legal.py'
+      - 'python/**/sensor.py'
+      - 'python/**/hub_estricto.py'
       - 'python/**/nerve.config'
 
 jobs:
