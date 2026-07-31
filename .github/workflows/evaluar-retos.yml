@@ -106,24 +106,39 @@ jobs:
           git sparse-checkout set python rust go java js retos
           git checkout
 
+          echo ""
+          echo "── Verificación: contenido de nerve-community ──"
+          if [ -d /tmp/nerve-community/python ]; then
+            echo "python/ existe. Módulos y niveles encontrados:"
+            find /tmp/nerve-community/python -maxdepth 2 -mindepth 1 -type d | sort
+          else
+            echo "⚠️ ADVERTENCIA: /tmp/nerve-community/python NO existe."
+            echo "Contenido real de /tmp/nerve-community:"
+            ls -la /tmp/nerve-community
+          fi
+
       - name: Configurar Python 3.12
         if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Instalar dependencias base
-        if: steps.detectar.outputs.archivos != ''
+        if: always() && steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         run: pip install -q pytest requests beautifulsoup4 aiohttp scikit-learn matplotlib
 
       - name: Configurar Go
         if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
 
       - name: Configurar Java
         if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -131,17 +146,19 @@ jobs:
 
       - name: Configurar Rust
         if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         uses: dtolnay/rust-toolchain@stable
 
       - name: Configurar Node.js
         if: steps.detectar.outputs.archivos != ''
+        continue-on-error: true
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
 
       - name: Ejecutar evaluaciones
         id: ejecutar
-        if: steps.detectar.outputs.archivos != ''
+        if: always() && steps.detectar.outputs.archivos != ''
         run: |
           archivos="${{ steps.detectar.outputs.archivos }}"
           fallo=0
@@ -156,6 +173,7 @@ jobs:
             [ -f "$archivo" ] || continue
 
             carpeta=$(dirname "$archivo")
+            carpeta_original="$carpeta"
             while [ "$carpeta" != "." ] && [ "$carpeta" != "/" ]; do
               oficial="/tmp/nerve-community/$carpeta"
               if [ -f "$oficial/evaluador.sh" ] || [ -f "$oficial/test_main.py" ]; then
@@ -166,6 +184,16 @@ jobs:
 
             if [ "$carpeta" = "." ] || [ "$carpeta" = "/" ]; then
               echo "- ⚠️ No se encontró evaluador oficial para \`$archivo\`" >> resultado_pr.md
+              echo "  <details><summary>Detalle técnico</summary>" >> resultado_pr.md
+              echo "" >> resultado_pr.md
+              echo '  ```' >> resultado_pr.md
+              echo "  Se buscó (sin éxito) evaluador.sh o test_main.py en:" >> resultado_pr.md
+              echo "  /tmp/nerve-community/$carpeta_original" >> resultado_pr.md
+              echo "  y en cada carpeta padre hasta la raíz." >> resultado_pr.md
+              echo "  Verifica que esa ruta exista tal cual (mayúsculas/guiones)" >> resultado_pr.md
+              echo "  dentro del repo nerve-community." >> resultado_pr.md
+              echo '  ```' >> resultado_pr.md
+              echo "  </details>" >> resultado_pr.md
               fallo=1
               continue
             fi
@@ -251,8 +279,17 @@ jobs:
 
           [ $fallo -eq 0 ] || exit 1
 
+      - name: Garantizar resultado_pr.md
+        if: always() && steps.detectar.outputs.archivos != ''
+        run: |
+          if [ ! -s resultado_pr.md ]; then
+            echo "## 🧪 Resultado de evaluación Nerve" > resultado_pr.md
+            echo "" >> resultado_pr.md
+            echo "⚠️ Hubo un error interno al ejecutar la evaluación (falló antes de poder correr los tests). Reintenta el push, o avisa al staff si sigue fallando." >> resultado_pr.md
+          fi
+
       - name: Comentar resultado en el PR
-        if: always() && steps.detectar.outputs.archivos != '' && hashFiles('resultado_pr.md') != ''
+        if: always() && steps.detectar.outputs.archivos != ''
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: nerve-evaluacion
