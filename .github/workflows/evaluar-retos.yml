@@ -14,20 +14,23 @@ on:
       - 'python/**/nerve.config'
 
 jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: Evaluar los retos modificados
+  # ─────────────────────────────────────────────
   evaluar:
-    name: Evaluacion de retos
+    name: Evaluacion
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      retos_aprobados: ${{ steps.ejecutar.outputs.retos_aprobados }}
 
     steps:
-      # 1. Repo del alumno
       - name: Clonar repo del alumno
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      # 2. Detectar qué carpetas cambió el alumno
       - name: Detectar retos modificados
         id: detectar
         run: |
@@ -44,15 +47,9 @@ jobs:
           echo "carpetas=$carpetas" >> "$GITHUB_OUTPUT"
           echo "Retos a evaluar: $carpetas"
 
-      # 3. Descargar SOLO los test_main.py oficiales para las carpetas modificadas
-      #    Se descargan en /tmp/tests_oficiales y se copian momentáneamente.
-      #    Nunca se commitean al repo del alumno.
       - name: Descargar tests oficiales
         if: steps.detectar.outputs.carpetas != ''
         run: |
-          carpetas="${{ steps.detectar.outputs.carpetas }}"
-
-          # Clonar nerve-community (público) con sparse-checkout eficiente
           git clone --depth 1 --no-checkout \
             https://github.com/nerve-learning/nerve-community.git \
             /tmp/nerve-community
@@ -60,17 +57,10 @@ jobs:
           cd /tmp/nerve-community
           git sparse-checkout init --cone
 
-          # Configurar solo las carpetas que necesitamos
-          rutas_sparsecheck=""
-          for carpeta in $carpetas; do
-            rutas_sparsecheck="$rutas_sparsecheck $carpeta"
-          done
-          git sparse-checkout set $rutas_sparsecheck
+          carpetas="${{ steps.detectar.outputs.carpetas }}"
+          git sparse-checkout set $carpetas
           git checkout
 
-          echo "Tests oficiales descargados."
-
-      # 4. Python + dependencias
       - name: Configurar Python 3.12
         if: steps.detectar.outputs.carpetas != ''
         uses: actions/setup-python@v5
@@ -82,14 +72,15 @@ jobs:
         if: steps.detectar.outputs.carpetas != ''
         run: pip install -q pytest requests beautifulsoup4 aiohttp
 
-      # 5. Ejecutar tests por cada carpeta modificada
       - name: Ejecutar evaluaciones
+        id: ejecutar
         if: steps.detectar.outputs.carpetas != ''
         run: |
           carpetas="${{ steps.detectar.outputs.carpetas }}"
           fallo=0
           pasan=0
           fallan=0
+          retos_aprobados=""   # lista de carpetas que pasaron todos sus tests
 
           echo ""
           echo "======================================================"
@@ -105,31 +96,28 @@ jobs:
             echo ""
             echo "--- $modulo / $nivel ---"
 
-            # Copiar test oficial a la carpeta del alumno (temporal)
             test_oficial="/tmp/nerve-community/$carpeta/test_main.py"
             if [ ! -f "$test_oficial" ]; then
-              echo "  Sin evaluador oficial para este nivel aun."
+              echo "  Sin evaluador oficial para este nivel."
               continue
             fi
 
             cp "$test_oficial" "$carpeta/test_main.py"
 
-            # Instalar requirements específicos del nivel
             if [ -f "$carpeta/requirements.txt" ]; then
               pip install -q -r "$carpeta/requirements.txt"
             fi
 
-            # Ejecutar
             if python -m pytest "$carpeta/test_main.py" -v --tb=short --no-header 2>&1; then
               echo "  APROBADO"
               pasan=$((pasan + 1))
+              retos_aprobados="$retos_aprobados $carpeta"
             else
               echo "  REPROBADO"
               fallan=$((fallan + 1))
               fallo=1
             fi
 
-            # Borrar el test — nunca vive en el repo del alumno
             rm "$carpeta/test_main.py"
           done
 
@@ -138,4 +126,124 @@ jobs:
           echo "  RESUMEN: $pasan aprobados / $fallan reprobados"
           echo "======================================================"
 
+          echo "retos_aprobados=$retos_aprobados" >> "$GITHUB_OUTPUT"
+
           [ $fallo -eq 0 ] || exit 1
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Desbloquear siguiente módulo si aplica
+  # ─────────────────────────────────────────────
+  desbloquear:
+    name: Desbloquear modulo
+    needs: evaluar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # necesita poder hacer push al repo del alumno
+
+    steps:
+      - name: Clonar repo del alumno (con permisos de escritura)
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Configurar git
+        run: |
+          git config user.name "Nerve Bot"
+          git config user.email "bot@nerve-learning.com"
+
+      - name: Verificar si hay retos aprobados que desbloquean algo
+        id: check
+        run: |
+          retos="${{ needs.evaluar.outputs.retos_aprobados }}"
+
+          # Mapa: nivel que desbloquea → módulos a copiar (separados por coma)
+          # Formato: "nivel_carpeta|Modulo-Siguiente1,Modulo-Siguiente2"
+          declare -A DESBLOQUEOS=(
+            ["10-RETO-ficha"]="Modulo-02-Flujo"
+            ["20-RETO-portero"]="Modulo-03-Estructuras"
+            ["30-RETO-inventario"]="Modulo-04-Bucles,Modulo-04.5-Iteracion-Avanzada"
+            ["40-RETO-analizador"]="Modulo-05-Funciones"
+            ["4-RETO-pipeline"]="Modulo-05-Funciones"
+            ["50-RETO-calculadora"]="Modulo-05.5-Calidad-de-Codigo,Modulo-06-OS"
+            ["6-RETO-suite-tests"]="Modulo-06-OS"
+            ["60-RETO-organizador"]="Modulo-07-Web-APIs,Modulo-07.5-Programacion-Asincrona"
+            ["70-RETO-monitor"]="Modulo-08-POO"
+            ["6-RETO-scraper-concurrente"]="Modulo-08-POO"
+            ["80-RETO-ecosistema"]="Modulo-09-Data-IA"
+            ["90-RETO-predictor"]="Modulo-10-Nerve"
+            ["100-topologia-red"]="Modulo-11-Herramientas-Nerve"
+            ["110-asociacion-archivos"]="Modulo-12-Arquitectura-Avanzada"
+            ["120-RETO-FINAL-DISTRIBUIDO"]="COMPLETADO"
+          )
+
+          modulos_a_desbloquear=""
+
+          for carpeta in $retos; do
+            nivel=$(basename "$carpeta")
+            if [ -n "${DESBLOQUEOS[$nivel]+_}" ]; then
+              siguiente="${DESBLOQUEOS[$nivel]}"
+              echo "Nivel $nivel desbloquea: $siguiente"
+              modulos_a_desbloquear="$modulos_a_desbloquear $siguiente"
+            fi
+          done
+
+          echo "modulos=$modulos_a_desbloquear" >> "$GITHUB_OUTPUT"
+
+      - name: Desbloquear modulos
+        if: steps.check.outputs.modulos != ''
+        run: |
+          modulos="${{ steps.check.outputs.modulos }}"
+
+          # Clonar nerve-community para copiar el contenido
+          git clone --depth 1 \
+            https://github.com/nerve-learning/nerve-community.git \
+            /tmp/nerve-community
+
+          cambios=0
+
+          for modulo in $modulos; do
+            if [ "$modulo" = "COMPLETADO" ]; then
+              echo "¡Felicidades! Has completado todos los modulos."
+              continue
+            fi
+
+            ruta_src="/tmp/nerve-community/python/$modulo"
+            ruta_dst="python/$modulo"
+
+            if [ ! -d "$ruta_src" ]; then
+              echo "No se encontro $modulo en nerve-community."
+              continue
+            fi
+
+            if [ -d "$ruta_dst" ]; then
+              echo "$modulo ya estaba desbloqueado."
+              continue
+            fi
+
+            echo "Desbloqueando $modulo..."
+            mkdir -p "$ruta_dst"
+
+            # Copiar solo los archivos de aprendizaje — SIN test_main.py
+            find "$ruta_src" -type f \
+              ! -name "test_main.py" \
+              ! -name "reto.py" | \
+            while read src; do
+              relative="${src#$ruta_src/}"
+              dest="$ruta_dst/$relative"
+              mkdir -p "$(dirname "$dest")"
+              cp "$src" "$dest"
+            done
+
+            git add "python/$modulo"
+            cambios=$((cambios + 1))
+            echo "  $modulo desbloqueado."
+          done
+
+          if [ $cambios -gt 0 ]; then
+            git commit -m "unlock: modulo(s) desbloqueado(s) — $modulos"
+            git push
+            echo "Nuevos modulos enviados al repositorio."
+          else
+            echo "Sin nuevos modulos que desbloquear."
+          fi
