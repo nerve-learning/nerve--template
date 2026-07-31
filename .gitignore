@@ -1,0 +1,2 @@
+*.sh
+.pytest_cache
