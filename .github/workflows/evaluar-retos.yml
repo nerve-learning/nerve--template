@@ -1,0 +1,121 @@
+name: Evaluar Retos Python
+
+on:
+  push:
+    paths:
+      - 'python/**/reto.py'
+      - 'python/**/test_reto*.py'
+      - 'python/**/ejemplo.py'
+      - 'python/**/radar.py'
+      - 'python/**/filtro.py'
+      - 'python/**/alarma.py'
+      - 'python/**/mesero.py'
+      - 'python/**/cocina.py'
+      - 'python/**/nerve.config'
+
+jobs:
+  evaluar:
+    name: Evaluacion de retos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Clonar repo del alumno
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Descargar tests oficiales (anti-trampa)
+        uses: actions/checkout@v4
+        with:
+          repository: nerve-learning/nerve-community
+          path: _tests_oficiales
+          token: ${{ secrets.NERVE_TESTS_TOKEN }}
+          sparse-checkout: |
+            python
+          sparse-checkout-cone-mode: false
+
+      - name: Sobrescribir test_main.py con versiones oficiales
+        run: |
+          find _tests_oficiales/python -name "test_main.py" | while read src; do
+            ruta_relativa="${src#_tests_oficiales/}"
+            destino="$ruta_relativa"
+            mkdir -p "$(dirname "$destino")"
+            cp "$src" "$destino"
+          done
+          echo "Tests oficiales aplicados."
+          rm -rf _tests_oficiales
+
+      - name: Detectar retos modificados
+        id: detectar
+        run: |
+          archivos=$(git diff --name-only HEAD^ HEAD -- 'python/**' 2>/dev/null || echo "")
+          if [ -z "$archivos" ]; then
+            echo "Sin cambios detectados."
+            echo "carpetas=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          carpetas=$(echo "$archivos" | xargs -I{} dirname {} | sort -u | tr '\n' ' ')
+          echo "carpetas=$carpetas" >> "$GITHUB_OUTPUT"
+          echo "Retos a evaluar: $carpetas"
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependencias base
+        run: pip install -q pytest requests beautifulsoup4 aiohttp
+
+      - name: Ejecutar evaluaciones
+        run: |
+          carpetas="${{ steps.detectar.outputs.carpetas }}"
+          if [ -z "$carpetas" ]; then
+            echo "Nada que evaluar."
+            exit 0
+          fi
+
+          fallo=0
+          pasan=0
+          fallan=0
+
+          echo ""
+          echo "======================================================"
+          echo "       EVALUACION NERVE -- RESULTADOS"
+          echo "======================================================"
+
+          for carpeta in $carpetas; do
+            [ -d "$carpeta" ] || continue
+            nivel=$(basename "$carpeta")
+            modulo=$(basename "$(dirname "$carpeta")")
+            echo ""
+            echo "--- $modulo / $nivel ---"
+
+            if [ -f "$carpeta/requirements.txt" ]; then
+              pip install -q -r "$carpeta/requirements.txt"
+            fi
+
+            test_file="$carpeta/test_main.py"
+            if [ ! -f "$test_file" ]; then
+              echo "  Sin evaluador para este nivel"
+              continue
+            fi
+
+            if python -m pytest "$test_file" -v --tb=short --no-header 2>&1; then
+              echo "  APROBADO"
+              pasan=$((pasan + 1))
+            else
+              echo "  REPROBADO"
+              fallan=$((fallan + 1))
+              fallo=1
+            fi
+          done
+
+          echo ""
+          echo "======================================================"
+          echo "  RESUMEN: $pasan aprobados / $fallan reprobados"
+          echo "======================================================"
+
+          [ $fallo -eq 0 ] || exit 1
