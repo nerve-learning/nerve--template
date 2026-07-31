@@ -10,15 +10,54 @@ de cada módulo de Python a tu ritmo.
 3. Estudia `ejemplo.py` para ver cómo funciona
 4. Lee `reto.md` — ahí está tu misión
 5. Crea el archivo `reto.py` y resuélvelo
-6. Haz commit y push — GitHub lo evaluará automáticamente
+6. Entrégalo con una Pull Request (ver abajo)
+
+## Cómo entregar un reto (Pull Request)
+
+Tus retos **no se evalúan con un push directo a `main`** — se entregan
+con una Pull Request. Es más trabajo escribir esto que hacerlo: son 4
+comandos y un botón.
+
+1. **Crea una rama** para el reto (puedes nombrarla como quieras, por
+   ejemplo el nombre del nivel):
+   ```
+   git checkout -b 01-hola-mundo
+   ```
+2. **Resuelve el reto**, guarda el archivo, y sube tu rama:
+   ```
+   git add .
+   git commit -m "resuelvo 01-hola-mundo"
+   git push origin 01-hola-mundo
+   ```
+3. **Abre el Pull Request**: GitHub te va a mostrar un aviso con un
+   botón "Compare & pull request" apenas hagas push — dale clic y
+   confirma. También puedes abrirlo manualmente desde la pestaña
+   "Pull requests" del repo.
+4. **Espera el comentario del bot**: en unos segundos el bot va a
+   comentar directo en tu Pull Request si tu reto pasó o no —
+   no necesitas revisar logs. Si algo falló, el comentario te dice
+   exactamente qué.
+5. **Corrige si hace falta**: si el comentario dice que reprobaste,
+   corrige `reto.py` en tu misma rama, vuelve a hacer commit y push
+   — el mismo Pull Request se vuelve a evaluar solo, sin que tengas
+   que abrir uno nuevo.
+6. **Mergea el Pull Request** cuando el comentario diga que aprobaste.
+   Ahí es cuando se desbloquea el siguiente módulo o glosario, si
+   corresponde.
+
+> Guía visual paso a paso de todo este flujo (rama, push, PR,
+> comentario del bot, merge) en el repo
+> [nerve-community](https://github.com/nerve-learning/nerve-community),
+> carpeta `Assets/`.
 
 ## Reglas
 
 - Solo crea/edita el archivo que pide el `reto.md` (casi siempre es `reto.py`)
-- Los tests se descargan del servidor en el momento del push — no tienes acceso a ellos
-- Un reto está aprobado cuando el check de GitHub aparece en verde ✓
-- Cuando termines el **RETO final** de un módulo, el siguiente módulo aparecerá
-  automáticamente en tu repositorio
+- Los tests se descargan del servidor en el momento del Pull Request — no tienes acceso a ellos
+- Un reto está aprobado cuando el bot comenta ✅ APROBADO en tu Pull Request
+- Un push directo a `main` no se evalúa y no desbloquea nada — siempre usa Pull Request
+- Cuando termines el **RETO final** de un módulo y mergees el Pull Request,
+  el siguiente módulo aparecerá automáticamente en tu repositorio
 
 ## Estructura de cada nivel
 
