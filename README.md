@@ -15,35 +15,61 @@ de cada módulo de Python a tu ritmo.
 ## Cómo entregar un reto (Pull Request)
 
 Tus retos **no se evalúan con un push directo a `main`** — se entregan
-con una Pull Request. Es más trabajo escribir esto que hacerlo: son 4
-comandos y un botón.
+con una Pull Request. Usas **una sola rama de trabajo para todo el
+curso** (no una rama nueva por cada nivel — con 135 retos eso sería un
+desastre). La llamamos `trabajo`, pero puedes ponerle el nombre que
+quieras, siempre y cuando sea siempre la misma.
 
-1. **Crea una rama** para el reto (puedes nombrarla como quieras, por
-   ejemplo el nombre del nivel):
+### La primera vez (una sola vez, al inicio del curso)
+
+```
+git checkout -b trabajo
+```
+
+### Para cada nivel, repite este ciclo
+
+1. **Sincroniza tu rama con `main`** antes de empezar — esto trae
+   cualquier módulo o glosario que se haya desbloqueado desde tu
+   último reto:
    ```
-   git checkout -b 01-hola-mundo
+   git checkout trabajo
+   git pull origin main
    ```
 2. **Resuelve el reto**, guarda el archivo, y sube tu rama:
    ```
    git add .
    git commit -m "resuelvo 01-hola-mundo"
-   git push origin 01-hola-mundo
+   git push origin trabajo
    ```
-3. **Abre el Pull Request**: GitHub te va a mostrar un aviso con un
-   botón "Compare & pull request" apenas hagas push — dale clic y
-   confirma. También puedes abrirlo manualmente desde la pestaña
-   "Pull requests" del repo.
+3. **Abre el Pull Request**: GitHub te muestra un aviso con el botón
+   "Compare & pull request" apenas hagas push — dale clic y confirma.
+   Esto pasa de nuevo en cada nivel, aunque ya hayas abierto y
+   mergeado un PR desde esta misma rama antes; es normal, cada push
+   nuevo habilita un PR nuevo.
 4. **Espera el comentario del bot**: en unos segundos el bot va a
    comentar directo en tu Pull Request si tu reto pasó o no —
    no necesitas revisar logs. Si algo falló, el comentario te dice
    exactamente qué.
 5. **Corrige si hace falta**: si el comentario dice que reprobaste,
-   corrige `reto.py` en tu misma rama, vuelve a hacer commit y push
-   — el mismo Pull Request se vuelve a evaluar solo, sin que tengas
-   que abrir uno nuevo.
+   corrige `reto.py` en la misma rama (`trabajo`), vuelve a hacer
+   commit y push — el mismo Pull Request se vuelve a evaluar solo,
+   sin que tengas que abrir uno nuevo.
 6. **Mergea el Pull Request** cuando el comentario diga que aprobaste.
    Ahí es cuando se desbloquea el siguiente módulo o glosario, si
    corresponde.
+7. **Vuelve al paso 1** para el siguiente nivel — sincroniza `trabajo`
+   con `main` de nuevo antes de empezar. Ese `pull` es el que te trae
+   el módulo nuevo a tu carpeta local (el bot lo crea directo en
+   GitHub, no aparece solo en tu copia local hasta que haces pull).
+
+> ⚠️ **Importante:** no todos los niveles desbloquean algo — solo el
+> **RETO final de cada módulo**. Cuando mergees ese RETO final, el
+> bot crea el módulo siguiente (y a veces un glosario nuevo)
+> **directo en GitHub, en la nube** — ahí lo vas a ver de inmediato
+> en la pestaña "Code" del repo. Tu carpeta local **no se entera
+> sola**: siempre que termines el RETO final de un módulo, haz
+> `git pull origin main` en tu rama `trabajo` antes de seguir, o vas
+> a estar buscando una carpeta que en tu computadora todavía no existe.
 
 > Guía visual paso a paso de todo este flujo (rama, push, PR,
 > comentario del bot, merge) en el repo
@@ -56,8 +82,14 @@ comandos y un botón.
 - Los tests se descargan del servidor en el momento del Pull Request — no tienes acceso a ellos
 - Un reto está aprobado cuando el bot comenta ✅ APROBADO en tu Pull Request
 - Un push directo a `main` no se evalúa y no desbloquea nada — siempre usa Pull Request
+- Usa siempre la misma rama de trabajo (`trabajo`) para todos los niveles —
+  no crees una rama nueva por cada reto
+- **No borres la rama `trabajo` después de mergear** — GitHub te va a
+  ofrecer un botón "Delete branch" apenas el PR se mergea; ignóralo,
+  la necesitas para el siguiente nivel
 - Cuando termines el **RETO final** de un módulo y mergees el Pull Request,
-  el siguiente módulo aparecerá automáticamente en tu repositorio
+  el siguiente módulo aparecerá automáticamente en tu repositorio de GitHub —
+  haz `git pull origin main` en tu rama `trabajo` para verlo ahí también
 
 ## Estructura de cada nivel
 
