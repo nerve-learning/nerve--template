@@ -41,11 +41,11 @@ git checkout -b trabajo
    git commit -m "resuelvo 01-hola-mundo"
    git push origin trabajo
    ```
-3. **Abre el Pull Request**: GitHub te muestra un aviso con el botón
-   "Compare & pull request" apenas hagas push — dale clic y confirma.
-   Esto pasa de nuevo en cada nivel, aunque ya hayas abierto y
-   mergeado un PR desde esta misma rama antes; es normal, cada push
-   nuevo habilita un PR nuevo.
+3. **Abre el Pull Request**: Puedes crearlo directamente desde la terminal con GitHub CLI (`gh`):
+   ```bash
+   gh pr create --fill
+   ```
+   *(O si prefieres desde la web, GitHub te muestra el botón "Compare & pull request" al hacer push).*
 4. **Espera el comentario del bot**: en unos segundos el bot va a
    comentar directo en tu Pull Request si tu reto pasó o no —
    no necesitas revisar logs. Si algo falló, el comentario te dice
