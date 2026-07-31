@@ -3,6 +3,7 @@ name: Evaluar Retos Python
 on:
   push:
     paths:
+      # Retos de módulos (alumno crea estos)
       - 'python/**/reto.py'
       - 'python/**/test_reto*.py'
       - 'python/**/radar.py'
@@ -15,10 +16,13 @@ on:
       - 'python/**/sensor.py'
       - 'python/**/hub_estricto.py'
       - 'python/**/nerve.config'
+      # Retos socráticos (alumno crea reto.py dentro de retos/)
+      - 'retos/python/**/reto.py'
 
 jobs:
   # ─────────────────────────────────────────────
-  # JOB 1: Evaluar los retos modificados
+  # JOB 1: Evaluar retos modificados
+  # Cubre: python/Modulo-XX y retos/python/
   # ─────────────────────────────────────────────
   evaluar:
     name: Evaluacion
@@ -34,23 +38,28 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Detectar retos modificados
+      - name: Detectar archivos modificados
         id: detectar
         run: |
-          archivos=$(git diff --name-only HEAD^ HEAD -- 'python/**' 2>/dev/null || \
-                     git show --name-only HEAD --format="" 2>/dev/null | grep '^python/' || echo "")
+          archivos=$(git diff --name-only HEAD^ HEAD 2>/dev/null || \
+                     git show --name-only HEAD --format="" 2>/dev/null || echo "")
 
-          if [ -z "$archivos" ]; then
-            echo "Sin cambios en python/."
+          # Filtrar: carpetas de módulos Y carpetas de retos socráticos
+          carpetas_modulos=$(echo "$archivos" | grep '^python/' | xargs -r -I{} dirname {} | sort -u || true)
+          carpetas_retos=$(echo "$archivos" | grep '^retos/python/' | xargs -r -I{} dirname {} | sort -u || true)
+
+          todas=$(printf "%s\n%s" "$carpetas_modulos" "$carpetas_retos" | sort -u | tr '\n' ' ')
+
+          if [ -z "$(echo $todas | tr -d ' ')" ]; then
+            echo "Sin cambios relevantes."
             echo "carpetas=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          carpetas=$(echo "$archivos" | xargs -I{} dirname {} | sort -u | tr '\n' ' ')
-          echo "carpetas=$carpetas" >> "$GITHUB_OUTPUT"
-          echo "Retos a evaluar: $carpetas"
+          echo "carpetas=$todas" >> "$GITHUB_OUTPUT"
+          echo "Retos a evaluar: $todas"
 
-      - name: Descargar tests oficiales
+      - name: Descargar tests oficiales de nerve-community
         if: steps.detectar.outputs.carpetas != ''
         run: |
           git clone --depth 1 --no-checkout \
@@ -73,7 +82,7 @@ jobs:
 
       - name: Instalar dependencias base
         if: steps.detectar.outputs.carpetas != ''
-        run: pip install -q pytest requests beautifulsoup4 aiohttp
+        run: pip install -q pytest requests beautifulsoup4 aiohttp scikit-learn matplotlib
 
       - name: Ejecutar evaluaciones
         id: ejecutar
@@ -83,21 +92,29 @@ jobs:
           fallo=0
           pasan=0
           fallan=0
-          retos_aprobados=""   # lista de carpetas que pasaron todos sus tests
+          retos_aprobados=""
 
           echo ""
           echo "======================================================"
-          echo "       EVALUACION NERVE -- RESULTADOS"
+          echo "       EVALUACION NERVE — RESULTADOS"
           echo "======================================================"
 
           for carpeta in $carpetas; do
             [ -d "$carpeta" ] || continue
 
             nivel=$(basename "$carpeta")
-            modulo=$(basename "$(dirname "$carpeta")")
+
+            # Identificar si es módulo o reto socrático para el label
+            if echo "$carpeta" | grep -q '^retos/'; then
+              grupo=$(echo "$carpeta" | cut -d'/' -f1-3)
+              label="[RETO SOCRÁTICO] $grupo / $nivel"
+            else
+              modulo=$(basename "$(dirname "$carpeta")")
+              label="[MODULO] $modulo / $nivel"
+            fi
 
             echo ""
-            echo "--- $modulo / $nivel ---"
+            echo "--- $label ---"
 
             test_oficial="/tmp/nerve-community/$carpeta/test_main.py"
             if [ ! -f "$test_oficial" ]; then
@@ -134,17 +151,18 @@ jobs:
           [ $fallo -eq 0 ] || exit 1
 
   # ─────────────────────────────────────────────
-  # JOB 2: Desbloquear siguiente módulo si aplica
+  # JOB 2: Desbloquear siguiente módulo + glosario
+  # Solo aplica para retos de python/Modulo-XX
   # ─────────────────────────────────────────────
   desbloquear:
     name: Desbloquear modulo
     needs: evaluar
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # necesita poder hacer push al repo del alumno
+      contents: write
 
     steps:
-      - name: Clonar repo del alumno (con permisos de escritura)
+      - name: Clonar repo del alumno
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -155,13 +173,12 @@ jobs:
           git config user.name "Nerve Bot"
           git config user.email "bot@nerve-learning.com"
 
-      - name: Verificar si hay retos aprobados que desbloquean algo
+      - name: Calcular desbloqueos
         id: check
         run: |
           retos="${{ needs.evaluar.outputs.retos_aprobados }}"
 
-          # Mapa: nivel que desbloquea → módulos a copiar (separados por coma)
-          # Formato: "nivel_carpeta|Modulo-Siguiente1,Modulo-Siguiente2"
+          # Mapa: RETO final de módulo → módulo(s) a desbloquear
           declare -A DESBLOQUEOS=(
             ["10-RETO-ficha"]="Modulo-02-Flujo"
             ["20-RETO-portero"]="Modulo-03-Estructuras"
@@ -180,54 +197,75 @@ jobs:
             ["120-RETO-FINAL-DISTRIBUIDO"]="COMPLETADO"
           )
 
+          # Mapa: RETO final → archivo de glosario a desbloquear
+          declare -A GLOSARIO_MAP=(
+            ["10-RETO-ficha"]="02-control-de-flujo.md"
+            ["20-RETO-portero"]="03-funciones.md"
+            ["30-RETO-inventario"]="04-estructuras-de-datos.md"
+            ["40-RETO-analizador"]="05-modulos-y-librerias.md"
+            ["4-RETO-pipeline"]="05-modulos-y-librerias.md"
+            ["50-RETO-calculadora"]="06-manejo-de-errores.md"
+            ["6-RETO-suite-tests"]="06-manejo-de-errores.md"
+            ["60-RETO-organizador"]="07-archivos-y-entrada-salida.md"
+            ["70-RETO-monitor"]="08-poo-basica.md"
+            ["6-RETO-scraper-concurrente"]="08-poo-basica.md"
+            ["80-RETO-ecosistema"]="09-data-ia.md"
+            ["90-RETO-predictor"]="10-nerve-ipc.md"
+            ["100-topologia-red"]="11-herramientas-avanzadas.md"
+            ["110-asociacion-archivos"]="12-arquitectura-avanzada.md"
+          )
+
           modulos_a_desbloquear=""
+          glosarios_a_desbloquear=""
 
           for carpeta in $retos; do
+            # Solo los retos de módulos disparan desbloqueo
+            echo "$carpeta" | grep -q '^python/' || continue
+
             nivel=$(basename "$carpeta")
+
             if [ -n "${DESBLOQUEOS[$nivel]+_}" ]; then
-              siguiente="${DESBLOQUEOS[$nivel]}"
-              echo "Nivel $nivel desbloquea: $siguiente"
-              modulos_a_desbloquear="$modulos_a_desbloquear $siguiente"
+              modulos_a_desbloquear="$modulos_a_desbloquear ${DESBLOQUEOS[$nivel]}"
+            fi
+
+            if [ -n "${GLOSARIO_MAP[$nivel]+_}" ]; then
+              glosarios_a_desbloquear="$glosarios_a_desbloquear ${GLOSARIO_MAP[$nivel]}"
             fi
           done
 
           echo "modulos=$modulos_a_desbloquear" >> "$GITHUB_OUTPUT"
+          echo "glosarios=$glosarios_a_desbloquear" >> "$GITHUB_OUTPUT"
 
-      - name: Desbloquear modulos
-        if: steps.check.outputs.modulos != ''
+      - name: Clonar nerve-community
+        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != ''
         run: |
-          modulos="${{ steps.check.outputs.modulos }}"
-
-          # Clonar nerve-community para copiar el contenido
           git clone --depth 1 \
             https://github.com/nerve-learning/nerve-community.git \
             /tmp/nerve-community
 
+      - name: Desbloquear modulos y glosarios
+        if: steps.check.outputs.modulos != '' || steps.check.outputs.glosarios != ''
+        run: |
+          modulos="${{ steps.check.outputs.modulos }}"
+          glosarios="${{ steps.check.outputs.glosarios }}"
           cambios=0
 
+          # ── Módulos ──────────────────────────────────────
           for modulo in $modulos; do
             if [ "$modulo" = "COMPLETADO" ]; then
-              echo "¡Felicidades! Has completado todos los modulos."
+              echo "¡Felicidades! Has completado todos los modulos de Python."
               continue
             fi
 
             ruta_src="/tmp/nerve-community/python/$modulo"
             ruta_dst="python/$modulo"
 
-            if [ ! -d "$ruta_src" ]; then
-              echo "No se encontro $modulo en nerve-community."
-              continue
-            fi
-
-            if [ -d "$ruta_dst" ]; then
-              echo "$modulo ya estaba desbloqueado."
-              continue
-            fi
+            [ -d "$ruta_src" ] || { echo "No encontrado: $modulo"; continue; }
+            [ -d "$ruta_dst" ] && { echo "$modulo ya desbloqueado."; continue; }
 
             echo "Desbloqueando $modulo..."
             mkdir -p "$ruta_dst"
 
-            # Copiar solo los archivos de aprendizaje — SIN test_main.py
             find "$ruta_src" -type f \
               ! -name "test_main.py" \
               ! -name "reto.py" | \
@@ -243,10 +281,26 @@ jobs:
             echo "  $modulo desbloqueado."
           done
 
+          # ── Glosarios ─────────────────────────────────────
+          for glosario in $glosarios; do
+            src="/tmp/nerve-community/glosario/python/$glosario"
+            dst="glosario/python/$glosario"
+
+            [ -f "$src" ] || { echo "Glosario no encontrado: $glosario"; continue; }
+            [ -f "$dst" ] && { echo "Glosario $glosario ya existe."; continue; }
+
+            mkdir -p glosario/python
+            cp "$src" "$dst"
+            git add "$dst"
+            cambios=$((cambios + 1))
+            echo "  Glosario desbloqueado: $glosario"
+          done
+
+          # ── Commit y push si hay cambios ───────────────────
           if [ $cambios -gt 0 ]; then
-            git commit -m "unlock: modulo(s) desbloqueado(s) — $modulos"
+            git commit -m "unlock: nuevos modulos y glosarios desbloqueados"
             git push
-            echo "Nuevos modulos enviados al repositorio."
+            echo "Contenido nuevo enviado al repositorio."
           else
-            echo "Sin nuevos modulos que desbloquear."
+            echo "Sin nuevos contenidos que desbloquear."
           fi
