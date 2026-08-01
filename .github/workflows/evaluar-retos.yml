@@ -211,6 +211,7 @@ jobs:
             if echo "$carpeta" | grep -q '^retos/'; then
               grupo=$(echo "$carpeta" | cut -d'/' -f1-3)
               label="[RETO SOCRÁTICO] $grupo / $nivel"
+              lenguaje=$(echo "$carpeta" | cut -d'/' -f2)
             else
               modulo=$(basename "$(dirname "$carpeta")")
               label="[$lenguaje] $modulo / $nivel"
