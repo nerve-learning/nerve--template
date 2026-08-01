@@ -1,24 +1,20 @@
 import time
 from nerve import NexusClient
 
-# Client that listens for messages crossing the bridge
-client = NexusClient()
+# 2. Crea una instancia de NexusClient llamada trabajador
+trabajador = NexusClient()
 
-try:
-    print("Bridge client trying to connect...")
-    client.connect("cliente_puente")
-    print("Connection successful.")
+# 3. Conecta al trabajador a la red de Nerve bajo el nombre "procesador_web"
+trabajador.connect("procesador_web")
 
-    def on_message_received(data):
-        print(f"Message received via bridge: {data}")
+# 4. Define una función callback llamada procesar_datos
+def procesar_datos(datos):
+    print("¡Mensaje recibido del puente web!")
+    print(f"Contenido: {datos}")
 
-    # Listen for incoming messages
-    client.listen(on_message_received)
-    print("Listening for messages. Press Ctrl+C to exit.")
+# 5. Registra el callback
+trabajador.listen(procesar_datos)
 
-    while True:
-        time.sleep(1)
-
-except ConnectionRefusedError:
-    print("Error: Could not connect to the Hub.")
-    print("Make sure 'nerve start' is running.")
+# 6. Crea un bucle infinito
+while True:
+    time.sleep(1)
