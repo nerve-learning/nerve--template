@@ -1,0 +1,3 @@
+Hoy aprendí a leer archivos en Python.
+Fue un buen día.
+Espero no olvidar el 'with'.
