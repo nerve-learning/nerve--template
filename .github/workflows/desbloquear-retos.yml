@@ -1,0 +1,102 @@
+name: Desbloquear Retos Finales
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - 'python/**/120-RETO-FINAL-DISTRIBUIDO/reto.py'
+      - 'javascript/**/120-RETO-FINAL-DISTRIBUIDO/reto.js'
+      - 'go/**/120-RETO-FINAL-DISTRIBUIDO/reto.go'
+      - 'rust/**/120-RETO-FINAL-DISTRIBUIDO/reto.rs'
+  workflow_dispatch:
+
+jobs:
+  desbloquear-retos:
+    name: Desbloquear Retos
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Clonar repo del alumno (main, post-merge)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configurar git
+        run: |
+          git config user.name "Nerve Bot"
+          git config user.email "bot@nerve-learning.com"
+
+      - name: Clonar nerve-community
+        run: |
+          git clone --depth 1 \
+            https://github.com/nerve-learning/nerve-community.git \
+            /tmp/nerve-community
+
+      - name: Desbloquear retos por lenguaje
+        run: |
+          cambios=0
+          
+          # Evaluar lenguajes presentes en el repositorio del alumno
+          for lang in python javascript go rust; do
+            if [ -d "$lang" ]; then
+              echo "Lenguaje detectado: $lang. Desbloqueando retos..."
+              
+              ruta_src="/tmp/nerve-community/retos/$lang"
+              ruta_dst="retos/$lang"
+              
+              if [ -d "$ruta_src" ]; then
+                mkdir -p "$ruta_dst"
+                
+                # Excluir 'rompehielo' y limpiar archivos solucion/test
+                find "$ruta_src" -mindepth 1 -maxdepth 1 -type d | while read reto_src; do
+                  nombre_reto=$(basename "$reto_src")
+                  
+                  if [ "$nombre_reto" = "rompehielo" ]; then
+                    continue
+                  fi
+                  
+                  reto_dst="$ruta_dst/$nombre_reto"
+                  if [ -d "$reto_dst" ]; then
+                    echo "El reto $nombre_reto ya existe, omitiendo."
+                    continue
+                  fi
+                  
+                  mkdir -p "$reto_dst"
+                  
+                  find "$reto_src" -type f \
+                    ! -name "test_main.py" \
+                    ! -name "reto.py" \
+                    ! -name "test_main.js" \
+                    ! -name "reto.js" \
+                    ! -name "test_main.go" \
+                    ! -name "reto.go" \
+                    ! -name "test_main.rs" \
+                    ! -name "reto.rs" | \
+                  while read src_file; do
+                    relative="${src_file#$reto_src/}"
+                    dest_file="$reto_dst/$relative"
+                    mkdir -p "$(dirname "$dest_file")"
+                    cp "$src_file" "$dest_file"
+                  done
+                  
+                  git add "$reto_dst"
+                  cambios=$((cambios + 1))
+                  echo "  Reto desbloqueado: $nombre_reto ($lang)"
+                done
+              fi
+            fi
+          done
+          
+          if [ $cambios -gt 0 ]; then
+            git commit -m "unlock: retos finales desbloqueados"
+            git push
+            echo "Retos enviados al repositorio."
+          else
+            echo "No hay nuevos retos que desbloquear."
+          fi
