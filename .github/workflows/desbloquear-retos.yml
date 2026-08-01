@@ -93,7 +93,7 @@ jobs:
             fi
           done
           
-          if [ $cambios -gt 0 ]; then
+          if ! git diff --staged --quiet; then
             git commit -m "unlock: retos finales desbloqueados"
             git push
             echo "Retos enviados al repositorio."
