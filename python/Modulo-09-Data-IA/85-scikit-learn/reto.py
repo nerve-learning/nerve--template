@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Alenia Studios
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import sklearn
 from sklearn.linear_model import LinearRegression
 
 grados_pasado = [[10], [20], [30]]
