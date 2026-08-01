@@ -1,0 +1,36 @@
+[
+    {
+        "tipo": "Normal",
+        "id_prod": "1",
+        "nombre": "Laptop",
+        "precio": 1200.0,
+        "cantidad": 10,
+        "categoria": {
+            "nombre": "Electrónica",
+            "descripcion": "Aparatos"
+        }
+    },
+    {
+        "tipo": "Perecedero",
+        "id_prod": "2",
+        "nombre": "Manzanas",
+        "precio": 1.5,
+        "cantidad": 3,
+        "categoria": {
+            "nombre": "Alimentos",
+            "descripcion": "Comida fresca"
+        },
+        "dias_caducidad": 7
+    },
+    {
+        "tipo": "Normal",
+        "id_prod": "3",
+        "nombre": "Mouse",
+        "precio": 25.0,
+        "cantidad": 4,
+        "categoria": {
+            "nombre": "Electrónica",
+            "descripcion": "Aparatos"
+        }
+    }
+]
