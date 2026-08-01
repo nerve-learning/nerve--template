@@ -1,5 +1,0 @@
-print("--- Mi Manifiesto ---")
-print("Hola mundo, estoy aquí.")
-print("Hoy escribo mi primera línea.")
-print("Mañana construiré sistemas.")
-print("Fin de la transmisión.")

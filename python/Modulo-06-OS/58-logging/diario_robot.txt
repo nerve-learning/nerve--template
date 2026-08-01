@@ -1,3 +1,0 @@
-INFO:root:El robot ha aterrizado en Marte.
-WARNING:root:Tormenta de arena detectada. Visibilidad reducida.
-ERROR:root:¡Atasco! La rueda derecha no responde.
